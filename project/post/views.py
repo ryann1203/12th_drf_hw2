@@ -1,16 +1,14 @@
 from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
-from rest_framework import viewsets, mixins
-from rest_framework.permissions import IsAuthenticated, IsAdminUser
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.decorators import action
+from rest_framework import viewsets, mixins
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
 
 from .models import Post, Comment, Tag
 from .serializers import PostSerializer, CommentSerializer, TagSerializer, PostListSerializer
 from .permissions import IsOwnerOrReadOnly
 
-# Create your views here.
 class PostViewSet(viewsets.ModelViewSet):
     queryset = Post.objects.all()
 
@@ -20,21 +18,18 @@ class PostViewSet(viewsets.ModelViewSet):
         return PostSerializer
     
     def get_permissions(self):
-        if self.action in ["create"]:
+        if self.action == "create":
             return [IsAuthenticated()]
-        
         elif self.action in ["update", "destroy", "partial_update"]:
             return [IsOwnerOrReadOnly()]
-        return[]
+        return []
 
     def create(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
-
         post = serializer.instance
         self.handle_tags(post)
-
         return Response(serializer.data)
     
     def perform_update(self, serializer):
@@ -50,27 +45,27 @@ class PostViewSet(viewsets.ModelViewSet):
             post.tag.add(tag)
         post.save()  
 
-    @action(methods=["GET"], detail=True, permission_classes=[IsAuthenticated])
+    @action(methods=["POST"], detail=True, permission_classes=[IsAuthenticated])
     def likes(self, request, pk=None):
-        likes_post = self.get_object()
+        post = self.get_object()
         user = request.user
 
-        if likes_post.likes.filter(id=user.id).exists():
-            likes_post.likes.remove(user)
-            likes_post.like_cnt -= 1
+        if post.likes.filter(id=user.id).exists():
+            post.likes.remove(user)
+            post.like_cnt -= 1
             liked = False
         else:
-            likes_post.likes.add(user)
-            likes_post.like_cnt += 1
+            post.likes.add(user)
+            post.like_cnt += 1
             liked = True
 
-        likes_post.save(update_fields = ["like_cnt"])
-        return Response({"liked": liked, "like_cnt": likes_post.like_cnt})
+        post.save(update_fields=["like_cnt"])
+        return Response({"liked": liked, "like_cnt": post.like_cnt})
     
     @action(detail=False, methods=["GET"])
     def top_liked(self, request):
-        top_posts = Post.objects.order_by('-like_cnt')[:3]
-        serializer = self.get_serializer(top_posts, many=True)
+        top_posts = Post.objects.order_by('-likes')[:3]
+        serializer = PostListSerializer(top_posts, many=True)
         return Response(serializer.data)
 
 class CommentViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin,
@@ -85,7 +80,6 @@ class CommentViewSet(viewsets.GenericViewSet, mixins.RetrieveModelMixin,
 
 class PostCommentViewSet(viewsets.GenericViewSet, mixins.ListModelMixin,
                           mixins.CreateModelMixin):
-    #queryset = Comment.objects.all()
     serializer_class = CommentSerializer
     permission_classes = [IsAuthenticated]
 
@@ -93,12 +87,6 @@ class PostCommentViewSet(viewsets.GenericViewSet, mixins.ListModelMixin,
         post = self.kwargs.get("post_id")
         queryset = Comment.objects.filter(post_id=post)
         return queryset
-
-    # def list(self, request, post_id=None):
-    #     post = get_object_or_404(Post, id=post_id)
-    #     queryset = self.filter_queryset(self.get_queryset().filter(post=post))
-    #     serializer = self.get_serializer(queryset, many=True)
-    #     return Response(serializer.data)
     
     def create(self, request, post_id=None):
         post = get_object_or_404(Post, id=post_id)
